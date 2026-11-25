@@ -47,7 +47,15 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      - name: Use the Android SDK pre-installed on the runner
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then echo "::error::Android SDK not found on runner"; exit 1; fi
+          echo "Android SDK: $SDK"
+          ls "$SDK/platforms" || true
+          SDKM=$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          if [ -n "$SDKM" ]; then yes | "$SDKM" --licenses > /dev/null || true; fi
+          echo "sdk.dir=$SDK" > "$APP/android/local.properties"
 
       - name: Install and sync web app into Android project
         working-directory: ${{ env.APP }}
