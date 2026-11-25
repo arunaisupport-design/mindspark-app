@@ -1,0 +1,68 @@
+name: Build MINDSpark Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Locate or unpack the app
+        run: |
+          set -e
+          find_cfg() { find . -maxdepth 5 -name capacitor.config.json -not -path "*/node_modules/*" -not -path "*/src/main/assets/*" -not -path "./.git/*" | head -1; }
+          ZIP=$(find . -maxdepth 3 -iname "*.zip" -not -path "./.git/*" | head -1)
+          if [ -n "$ZIP" ]; then
+            echo "Unpacking $ZIP"
+            rm -rf _unpacked && mkdir _unpacked
+            unzip -q -o "$ZIP" -d _unpacked
+            CFG=$(cd _unpacked && find_cfg)
+            [ -n "$CFG" ] && CFG="_unpacked/${CFG#./}"
+          else
+            CFG=$(find_cfg)
+          fi
+          if [ -z "$CFG" ]; then
+            echo "::error::App files not found. Upload MINDSpark_Android_Project.zip to the repository (Add file > Upload files)."
+            echo "Files currently in the repository:"
+            find . -maxdepth 3 -not -path "./.git" -not -path "./.git/*" | sort | head -80
+            exit 1
+          fi
+          APP=$(dirname "$CFG")
+          for f in package.json www/index.html android/gradlew android/app/build.gradle android/settings.gradle; do
+            if [ ! -e "$APP/$f" ]; then echo "::error::Missing $APP/$f - the upload is incomplete. Upload MINDSpark_Android_Project.zip instead."; exit 1; fi
+          done
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          echo "App folder: $APP"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install and sync web app into Android project
+        working-directory: ${{ env.APP }}
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npx cap sync android
+
+      - name: Build debug APK
+        working-directory: ${{ env.APP }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: MINDSpark-debug-apk
+          path: ${{ env.APP }}/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
