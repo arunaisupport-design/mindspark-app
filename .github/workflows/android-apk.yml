@@ -9,14 +9,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - name: Find the app folder
+        run: |
+          CFG=$(find . -maxdepth 4 -name capacitor.config.json -not -path "*/node_modules/*" -not -path "*/assets/*" | head -1)
+          if [ -z "$CFG" ]; then echo "capacitor.config.json not found - check the upload"; ls -R | head -50; exit 1; fi
+          echo "APP=$(dirname "$CFG")" >> "$GITHUB_ENV"
+          echo "App folder: $(dirname "$CFG")"
+
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -24,17 +30,18 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Install and sync web app into Android project
+        working-directory: ${{ env.APP }}
         run: |
-          npm ci
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
           npx cap sync android
 
       - name: Build debug APK
-        working-directory: android
+        working-directory: ${{ env.APP }}/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: MINDSpark-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APP }}/android/app/build/outputs/apk/debug/app-debug.apk
